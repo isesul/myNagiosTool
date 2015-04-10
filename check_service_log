@@ -1,0 +1,189 @@
+#!/bin/bash
+#########################################################################################################
+#	Este shell esta destinado a revicion de actualizacion de logs generados Servicio Integracion SGA, 
+#	sin embargo es posible adaptarlo para que funcione con cualquier archivo..
+#
+#	version 1.0 por Benjamin Segura
+#
+#########################################################################################################
+
+
+#########################################################################################################
+manual="\n\nEste shell script esta desarrollado por Benjamin Segura. \n\nte estaremos eternamente agradecido.
+\n\nAtte yo mismo...
+\n\nel modo de uso de esta shell:
+\n      esta destinada a verificar el estado de escritura de log generados por cualquier aplicacion.
+\n\nel estandard de nombre de log usado en esta compania es, \$servicio\$fecha.txt
+\n\n
+por ejemplo
+\n\n    #>seelogstate srvftp \$server
+\n\n    donde srvftp es el nombre del servicio, y la aplicacion automaticamente calculara la fecha actual.
+\n	Tambien es necesario especificar el nombre del server, aunque en realidad es el nombre del directorio donde esta montado
+\n	el server, que tiene activado el servicio que genera los log
+\n
+\npor ejemmplo
+\n      #>seelogstate srvftp alkes02
+\n\n"
+#########################################################################################################
+dir=$1
+nowtime=$(date | cut -d' ' -f4)
+
+function acknowledge() {
+	OK_STATE=0
+	WARNING_STATE=1
+	CRITICAL_STATE=2
+	UNKNOW_STATE=3
+
+	case $ack in
+		0)
+			echo "OK: last update file "$timefile
+        	exit $OK_STATE
+        	;;
+		1)
+			echo "WARNING: last update file "$timefile
+        	exit $WARNING_STATE
+        	;;
+		2)
+			echo "CRITICAL: last update file "$timefile
+        	exit $CRITICAL_STATE
+        	;;
+		*)
+			echo "unknow"
+			exit $UNKNOW_STATE
+			;;
+		esac
+}
+function error() {
+	echo -e "verificar datos ingresados\n1)"$dir$filename1"\n2)"$dir$filename2
+	exit
+}
+function diff() {
+
+	#echo $dat
+	case $dat in
+		hrs)
+			rest=`expr $hs - $hf`
+			#echo "diferencia es: "$rest" hrs"
+			ack=2
+			acknowledge
+			;;
+		min)
+			rest=`expr $ms - $mf`
+			#echo "diferencia es: "$rest" minutos"
+			if [ $rest -ge 15  ]
+				then
+				ack=2
+				acknowledge
+				else
+				if [ $rest -ge 5 ]
+					then
+					ack=1
+					acknowledge
+					else
+						ack=0
+						acknowledge
+					fi
+				fi
+			;;
+		ok)
+			ack=0
+			acknowledge
+			;;
+		*)
+			ack=3
+			acknowledge
+			;;
+	esac	
+}
+function getname() {
+	filename1=$2'_'$(date +d%m%Y)'.log'
+
+	if [ -s $dir$filename1 ]
+        then
+        #echo "ok existe "$dir$filename1
+        filename=$filename1
+        else
+        	filename2=$1'_'$(date +%Y%m%d)'.log'
+        	if [ -s $dir$filename2 ]
+        		then
+        		#echo "ok2 existe "$dir$filename2
+        		filename=$filename2
+        		else
+		        	#echo "no existe "$dir$filename1"err 1"
+		        	#echo "no existe "$dir$filename2 "err 2"
+		        	error $dir$filename2 $dir$filename1
+		        fi
+		fi
+}
+function gettimefile() {
+		timefile=$(stat $dir$filename | grep Modify | cut -d' ' -f3 | cut -d'.' -f1)
+		#echo $timefile
+}
+function compare() {
+	hf=$(echo $1 | cut -d':' -f1)
+	mf=$(echo $1 | cut -d':' -f2)
+
+	hs=$(date +%H)
+	ms=$(date +%M)
+	if [ $hs -eq 00 ]
+		then
+		hs=24
+		fi
+
+	if [ $hf -eq 00 ]
+		then
+		hf=24
+		fi
+
+	if [ $hf -lt $hs ]
+	        then
+			#echo "la hora archivo "$hf":"$mf" es menor que la hora sistema "$hs":"ms " x1" #log no actualizado
+			#action here
+
+			dat="hrs"
+			diff
+	        else
+			if [ $hf -ge $hs ]
+				then
+	        	#echo "la hora archivo "$hf":"$mf" es mayor o igual que la hora sistema "$hs":"$ms" x2" #ok next
+	        	dat="ok"
+	        	diff
+	        	if [ $mf -lt $ms ]
+	        		then
+	        		if [ $hf -gt $hs ]
+	        			then
+	        			#nothing
+	        			#echo "la hora archivo "$hf":"$mf" es mayor o igual que la hora sistema "$hs":"$ms" x3" #ok next
+	        			dat="ok"
+	        			diff
+	        			else
+		        		#echo "la hora archivo "$hf":"$mf" es menor que la hora sistema "$hs":"$ms" x4" #log no actualizado
+		        		#action here
+		        		dat="min"
+		        		diff
+		        		fi
+	        		else
+	        			if [ $mf -ge $ms ]
+	        				then
+	        				#echo "la hora archivo "$hf":"$mf" es mayor o igual que la hora sistema "$hs":"$ms" x5" #ok next
+	        				dat="ok"
+	        				diff
+	        				else
+	        					echo "no cumple ninguna condicion X6"
+	        				fi
+					fi
+				else
+					echo "no cumple ninguna condicion"
+					echo $hs" - "$hf
+				fi
+			fi
+}
+
+if [ "$1" == "" ] || [ "$2" == "" ]
+        then
+		echo -e $manual
+        else
+        getname $2
+        gettimefile $1
+        compare $timefile
+        fi

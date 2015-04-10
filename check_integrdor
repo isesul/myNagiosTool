@@ -1,0 +1,49 @@
+#!/bin/bash
+
+consulta="select ROUND((sysdate - max(fecha))*24*60) from sganew.TB_SGA_INTEGRADOR_DATASGA where cod_estadotransaccion=1 and estado_enproceso=0";
+
+OK_STATE=0
+WARNING_STATE=1
+CRITICAL_STATE=2
+UNKNOW_STATE=3
+
+function nagios()
+{
+
+	if [ "$ESTADO" == "" ]
+		then
+		echo "OK - Ultima actualizacion hace 0 minutos aprox";
+		exit $OK_STATE;
+	else
+        if [ $ESTADO -ge 5 ]; 
+                then
+                echo "CRITICAL - $shortstat";
+                exit $CRITICAL_STATE;
+        elif [ $ESTADO -ge 3 ]
+                then
+                echo "WARNING - $shortstat";
+                exit $WARNING_STATE;
+
+                        echo "WARNING - $shortstat";
+                        exit $OK_STATE;
+        else
+        	echo "OK - $shortstat";
+        	exit $OK_STATE;
+        fi
+    fi
+}
+
+read_sql()
+{
+        typeset stmt=$consulta
+        typeset login=cmendez/cmc1164@arcall
+        echo "
+        set feedback off verify off heading off pagesize 0
+        $stmt;
+        exit " | sqlplus -s $login
+}
+
+ESTADO=(`read_sql $consulta "hr/hr@XE" | while read v1 ; do echo "$v1"; done`)
+shortstat=$(echo "Ultima actualizacion hace "$ESTADO" minutos aprox.")
+
+nagios $ESTADO;

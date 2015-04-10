@@ -1,0 +1,14 @@
+#!/bin/bash
+
+#########################################################################################################
+manual="Esta shell requiere 2 parametros, Server y filesyste, por ejemplo:\nCommand:	>#check_hpux SATURNO u00"
+#########################################################################################################
+
+if [ $1 -s ] || [ $2 -s ]
+        then
+		echo -e $manual
+        else
+		date=$(/usr/local/nagios/libexec/check_fs_unix $1 $2)
+		echo "ARG1: ["$1"] ARG2: ["$2"]" $date
+		
+        fi

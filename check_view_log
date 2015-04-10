@@ -1,0 +1,180 @@
+#!/bin/bash
+#########################################################################################################
+#	Este shell esta destinado a revicion de actualizacion de logs generados por ABT, sin embargo es
+#	posible adaptarlo para que funcione con cualquier archivo.
+#	cualquier modificacion al archivo es ideal informar por medio de comentarios, para futuros cambios.
+#	debe sumar 0.1 a la version por cada modificacion, y agregar su nombre.
+#
+#	version 1.0 por Benjamin Segura
+#
+#########################################################################################################
+
+
+#########################################################################################################
+manual="\n\nEste shell script esta desarrollado por Benjamin Segura. \n\nte estaremos eternamente agradecido.
+\n\nAtte yo mismo...
+\n\nel modo de uso de esta shell:
+\n      esta destinada a verificar el estado de escritura de log generados por cualquier aplicacion.
+\n\nel estandard de nombre de log usado en esta compania es, \$servicio\$fecha.txt
+\n\n
+por ejemplo
+\n\n    #>seelogstate srvftp \$server
+\n\n    donde srvftp es el nombre del servicio, y la aplicacion automaticamente calculara la fecha actual.
+\n	Tambien es necesario especificar el nombre del server, aunque en realidad es el nombre del directorio donde esta montado
+\n	el server, que tiene activado el servicio que genera los log
+\n
+\npor ejemmplo
+\n      #>check_log_up srvftp alkes02
+\n\n"
+#########################################################################################################
+dir='/mnt/'$2'/Servicios/EPA_EPCS/EPA_EPCS_NET_V2/Log/'
+nowtime=$(date | cut -d' ' -f4)
+function acknowledge() {
+	OK_STATE=0
+	WARNING_STATE=1
+	CRITICAL_STATE=2
+	UNKNOW_STATE=3
+
+	case $ack in
+		0)
+			echo "OK: "$datalog
+        	exit $OK_STATE
+        	;;
+		1)
+			echo "WARNING: "$datalog
+        	exit $WARNING_STATE
+        	;;
+		2)
+			echo "CRITICAL:  "$datalog
+        	exit $CRITICAL_STATE
+        	;;
+		*)
+			echo "unknow"
+			exit $UNKNOW_STATE
+			;;
+		esac
+}
+function error() {
+	echo "verificar datos ingresados"
+	exit 2
+}
+function diff() {
+
+	#echo $dat
+	case $dat in
+		err)
+			if [ $resto -ge 1800  ]
+				then
+				ack=2
+				acknowledge
+			else
+				ack=1
+				acknowledge
+			fi
+			;;
+		ok)
+			ack=0
+			acknowledge
+			;;
+		*)
+			ack=3
+			acknowledge
+			;;
+	esac
+}
+function getname() {
+	filename1=$1'_'$(date +%Y%m%d)'.log'
+	#echo $filename1
+	if [ -s $dir$filename1 ]
+        then
+        #echo "ok existe "$dir$filename1
+        filename=$filename1
+        else
+        	filename2=$1'_'$(date +%Y%m%d)'.log'
+        	if [ -s $dir$filename2 ]
+        		then
+        		#echo "ok2 existe "$dir$filename2
+        		filename=$filename2
+        		else
+        			filename3=$1'1'$(date +%Y%m%d)'.log'
+        			if [ -s $dir$filename3 ]
+        				then
+        				filename=$filename3
+        				else
+			        	#echo "no existe "$dir$filename1"err 1"
+			        	#echo "no existe "$dir$filename2 "err 2"
+			        	error
+			        	fi
+		        fi
+		fi
+}
+function gettimefile() {
+		timefile=$(date --date="$(stat $dir$filename  | grep Modify | awk '{ print $2,$3}' )")
+		filedate=$(date --date="$(stat $dir$filename  | grep Modify | awk '{ print $2,$3}' )" +%s)
+		sysdate=$(date --date="$(date)" +%s)
+		#echo $timefile
+}
+
+function seeLog() {
+	v1type=$(tail -4 $dir$filename |grep Error |tail -1);										#Case Error
+	v2type=$(tail -4 $dir$filename |grep ORA |tail -1);											#Case Error Oracle
+	v3type=$(tail -4 $dir$filename |grep ICON_TTR2 |grep "No se encontraron datos"|tail -1);	#Case no data
+	v4type=$(tail -4 $dir$filename |grep "Registros Insertados:"|tail -1);
+	
+
+	if [ "$v1type" != ""  ]
+		then
+		echo $v1type;
+		ack=2
+		datalog=$v1type
+		acknowledge 
+	elif [ "$v2type" != "" ]
+		then
+		ack=2
+		datalog=$v2type
+		acknowledge 
+	elif [ "$v3type" != "" ]
+		then
+		ack=1
+		datalog=$v3type" Reportar en horario 9 a 23 horas"
+		acknowledge 
+	else
+		ack=0
+		datalog=$v4type" "$v1type" "$v2type" "$v3type
+		acknowledge
+	fi	
+
+}
+
+
+function compare() {
+	hf=$(echo $1 | cut -d':' -f1)
+	mf=$(echo $1 | cut -d':' -f2)
+	resto=$(expr $sysdate - $filedate)
+
+	if [ $filedate -lt $sysdate ]
+		then
+		if [ $resto -gt 900 ]
+			then
+			dat="err"
+			diff
+		else
+			dat="ok"
+			diff
+		fi
+	else
+		dat="ok"
+		diff
+	fi
+}
+
+if [ $1 == "" ] || [ $2 == "" ] 
+        then
+		echo -e $manual
+        else
+        #filename="eccoraclesql_20150403.log"
+        getname $1
+        #gettimefile $1
+        #compare $timefile
+        seeLog 
+        fi

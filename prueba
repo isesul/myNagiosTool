@@ -1,0 +1,150 @@
+#!/bin/bash
+#---------------------------------------------------------------------------------
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#---------------------------------------------------------------------------------
+#manual de uso del comando
+manual="\n
+Esta aplicacion consulta el espacio disponible en los servidores HP-UX\n
+Funciona a base de una Table donde se registra esta informacion\n
+para que la ejecucion sea correcta es necesario 2 parametros\n
+El primero es el nombre del server, y el segundo un directorio donde esta montado el volumen.\n\n
+ejemplo:\n
+[root@localhost]#check_fs_hpux saturno u00\n\n
+"
+#---------------------------------------------------------------------------------
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#---------------------------------------------------------------------------------
+# Nagios
+
+acknowledge() 
+{
+	OK_STATE=0
+	WARNING_STATE=1
+	CRITICAL_STATE=2
+	UNKNOW_STATE=3
+	output=$shortstat
+
+	case $ack in
+		0)
+			echo "OK: "$shortstat
+			#echo "OK: "$shortstat >> /usr/local/nagios/log_check_fs_hpux.log
+        	exit $OK_STATE
+        	;;
+		1)
+			echo "WARNING: "$shortstat
+        	exit $WARNING_STATE
+        	;;
+		2)
+			echo "CRITICAL: "$shortstat
+        	exit $CRITICAL_STATE
+        	;;
+		*)
+			echo "unknow"
+			exit $UNKNOW_STATE
+			;;
+		esac
+}
+#---------------------------------------------------------------------------------
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#---------------------------------------------------------------------------------
+#Analisis
+
+review()
+{
+	if [ $P -le 20 ];then
+		if [ $P -le 15 ];then
+			#echo "critical"
+			ack=2
+			acknowledge $shortstat $ack
+			else
+			ack=1
+			acknowledge $shortstat $ack
+			#echo "warning"
+		fi
+	else
+		#echo "ok"
+		ack=0
+		acknowledge $shortstat $ack
+		#echo $shortstat $ack >> /usr/local/nagios/log_check_fs_hpux.log
+	fi	
+}
+
+#---------------------------------------------------------------------------------
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#---------------------------------------------------------------------------------
+# read_sql
+# Funcion para hacer consultas SQLPlus y cargar los valores en variables o Arrays
+#Consulta SQL a tablas oracle
+read_sql()
+{
+	typeset stmt=$query
+	typeset login=process/proc01@odsprod
+	echo "
+	set feedback off verify off heading off pagesize 0 
+	$stmt; 
+	exit " | sqlplus -s $login
+}
+#---------------------------------------------------------------------------------
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#---------------------------------------------------------------------------------
+# Mostrar y setear variables
+set_var()
+{
+	#echo "Ejecutando funcion set_var()..." >> /usr/local/nagios/log_check_fs_hpux.log
+	query="Select FSHDSERVER, FSHDFILSYS, FSHDSIZE, FSHDUSED, FSHDMOUNON From PROCESS.FREESPACEHD Where upper(FSHDSERVER) = trim(upper(' $1 ')) AND lower(FSHDMOUNON) = lower(trim(' /$2 '))"
+	#echo -e "Ejecutando consulta\n $query" >> /usr/local/nagios/log_check_fs_hpux.log
+	#ORACLE_SID, y ORACLE_HOME deben estar definidas.
+	#echo "I Am :"$(whoami) >> /usr/local/nagios/log_check_fs_hpux.log
+	export ORACLE_BASE=/usr/oracle/app
+	export ORACLE_HOME=/u01/app/oracle/product/11.2.0/dbhome_1
+	#echo "ORACLE_SID=$ORACLE_SID" >> /usr/local/nagios/log_check_fs_hpux.log
+	#echo "ORACLE_HOME=$ORACLE_HOME" >> /usr/local/nagios/log_check_fs_hpux.log
+	DATOS=(`read_sql $query "hr/hr@XE" | while read v1 v2 v3 v4 v5; do echo "$v1 $v2 $v3 $v4 $v5"; done`)
+	#echo "SERVER: "${DATOS[0]} "Volumen: "${DATOS[1]} "Total: "${DATOS[2]}" MB Usado: "${DATOS[3]}" MB Mount on: "${DATOS[4]}  >> /usr/local/nagios/log_check_fs_hpux.log
+	#for i in ${DATOS[@]}; do echo "$(date)-[for][$i]" >> /usr/local/nagios/log_check_fs_hpux.log ; done
+
+	
+	AVKB=$(expr ${DATOS[2]} - ${DATOS[3]})
+	TOMB=$(expr ${DATOS[2]} / 1024)
+	TOGB=$(expr $TOMB / 1024)
+	USMB=$(expr ${DATOS[3]} / 1024)
+	UBGB=$(expr $USMB / 1024)
+	AVMB=$(expr $AVKB / 1024)
+	AVGB=$(expr $AVMB / 1024)
+	P=$(expr  $( expr ${DATOS[3]} * 100 ) / ${DATOS[2]} )
+	#echo -e "Long Output: \n"
+	longstat=$(echo "SERVER: "${DATOS[0]} "Volumen: "${DATOS[1]} "Total: "$TOMB" MB Usado: "$USMB" MB Disponible: "$AVMB" MB Mount on: "${DATOS[4]})
+	#echo $longstat
+	#echo -e \nShort Output"
+	shortstat=$(echo Disponible : "$P"% en "${DATOS[4]} de $1")
+	#echo $shortstat
+	review $P $shortstat
+}
+#---------------------------------------------------------------------------------
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#---------------------------------------------------------------------------------
+# Ejecutando las funciones
+
+
+if [ "$1" == "" ] || [ "$2" == "" ]
+	then
+	echo -e $manual
+	else
+	#echo "Variables Server: [$1] y Path: [$2]" >> /usr/local/nagios/log_check_fs_hpux.log
+	set_var $1 $2
+fi
+
+#---------------------------------------------------------------------------------
+

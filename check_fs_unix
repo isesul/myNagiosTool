@@ -1,0 +1,87 @@
+#!/bin/bash
+#---------------------------------------------------------------------------------
+# read_sql
+# Funcion para hacer consultas SQLPlus y cargar los valores en variables o Arrays
+#---------------------------------------------------------------------------------
+
+query=$(echo "Where FSHDSERVER = trim(upper("\' $1 \'")) AND FSHDMOUNON = trim("\' $2 \'")")
+
+#---------------------------------------------------------------------------------
+#Nagios States
+#
+#
+OK_STATE=0
+WARNING_STATE=1
+CRITICAL_STATE=2
+UNKNOW_STATE=3
+
+#Analisis Nagios
+
+function nagios()
+{
+        if [ $AVKB -le 204800 ];
+                then
+                if [ $AVKB -le 153600 ];
+                        then
+                        echo "CRITICAL - $shortstat"
+                        exit $CRITICAL_STATE
+                else
+                echo "WARNING - $shortstat"
+                exit $WARNING_STATE
+                fi
+        else
+                echo "OK - $shortstat"
+                exit $OK_STATE
+        fi
+}
+
+#---------------------------------------------------------------------------------
+
+#---------------------------------------------------------------------------------
+#Consulta SQL a tablas oracle
+read_sql()
+{
+        typeset stmt=$consulta
+        typeset login=process/proc01@odsprod
+        echo "
+        set feedback off verify off heading off pagesize 0
+        $stmt;
+        exit " | sqlplus -s $login
+}
+
+#ORACLE_SID, y ORACLE_HOME deben estar definidas
+#echo "ORACLE_SID=$ORACLE_SID"
+#echo "ORACLE_HOME=$ORACLE_HOME"
+consulta=$(echo "Select FSHDSERVER, FSHDFILSYS, FSHDSIZE, FSHDUSED, FSHDMOUNON From PROCESS.FREESPACEHD Where FSHDSERVER = trim(upper("\' $1 \'")) AND FSHDMOUNON = trim("\' /$2 \'")")
+#echo $consulta
+DATOS=(`read_sql $consulta "hr/hr@XE" | while read v1 v2 v3 v4 v5; do echo "$v1 $v2 $v3 $v4 $v5"; done`)
+#echo "SERVER: "${DATOS[0]} "Volumen: "${DATOS[1]} "Total: "${DATOS[2]}" MB Usado: "${DATOS[3]}" MB Mount on: "${DATOS[4]}
+#for i in ${DATOS[@]}; do echo "-> $i <- " ; done
+
+#---------------------------------------------------------------------------------
+
+
+
+AVKB=$(expr  ${DATOS[2]} - ${DATOS[3]})
+TOMB=$(expr ${DATOS[2]} / 1024)
+TOGB=$(expr $TOMB / 1024)
+USMB=$(expr ${DATOS[3]} / 1024)
+UBGB=$(expr $USMB / 1024)
+AVMB=$(expr $AVKB / 1024)
+AVGB=$(expr $AVMB / 1024)
+
+T=${DATOS[2]} #total
+U=${DATOS[3]} #usado
+
+P=$(expr  $( expr ${DATOS[3]} \* 100 ) / ${DATOS[2]} ) # Porcentaje
+
+#echo $P" <-- this is P % simbol"
+
+#echo -e "Long Output: \n"
+longstat=$(echo "SERVER: "${DATOS[0]} "Volumen: "${DATOS[1]} "Total: "$TOMB" MB Usado: "$USMB" MB Disponible: "$AVMB" MB Mount on: t on: "${DATOS[4]})
+
+#echo -e "\nShort Output"
+shortstat=$(echo Avail : "$P"% or $AVMB MB on "${DATOS[4]}" )
+
+nagios $AVKB $shortstat
+
